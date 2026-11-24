@@ -36,20 +36,11 @@ public class DataInitializer implements CommandLineRunner {
         UserPermission userUpdate    = permissionService.findOrCreate("users",   "update",  "Update users");
         UserPermission userDelete    = permissionService.findOrCreate("users",   "delete",  "Delete users");
         UserPermission rolesManage   = permissionService.findOrCreate("roles",   "manage",  "Manage roles");
-        UserPermission courseRead    = permissionService.findOrCreate("courses", "read",    "View courses");
-        UserPermission courseCreate  = permissionService.findOrCreate("courses", "create",  "Create courses");
-        UserPermission courseUpdate  = permissionService.findOrCreate("courses", "update",  "Update courses");
-        UserPermission courseDelete  = permissionService.findOrCreate("courses", "delete",  "Delete courses");
-        UserPermission coursePublish = permissionService.findOrCreate("courses", "publish", "Publish courses");
-        UserPermission courseEnroll = permissionService.findOrCreate("courses", "enroll", "Enroll courses");
-        UserPermission specialityRead = permissionService.findOrCreate("specialities", "read", "View specialities");
-        UserPermission specialityUpdate = permissionService.findOrCreate("specialities", "update", "Update specialities");
-        UserPermission notificationsManage = permissionService.findOrCreate("notifications", "manage", "Manage notification templates and configurations");
 
         // 2. Seed ADMIN role (idempotent)
         Role adminRole = roleService.findOrCreate("ROLE_ADMIN", "Administrator", "Full system access");
-        Role guestRole = roleService.findOrCreate("ROLE_GUEST", "Guest", "Guest system access");
-        Role studentRole = roleService.findOrCreate("ROLE_STUDENT", "Student", "Student system access");
+        Role workerRole = roleService.findOrCreate("ROLE_WORKER", "Worker", "WORKER system access");
+        Role userRole = roleService.findOrCreate("ROLE_USER", "User", "User system access");
 
         // 3. Ensure admin role has all permissions
         roleService.addRolePermissions(adminRole.getId(), Set.of(
@@ -57,28 +48,15 @@ public class DataInitializer implements CommandLineRunner {
                 userCreate.getId(),
                 userUpdate.getId(),
                 userDelete.getId(),
-                rolesManage.getId(),
-                courseRead.getId(),
-                courseCreate.getId(),
-                courseUpdate.getId(),
-                courseDelete.getId(),
-                coursePublish.getId(),
-                courseEnroll.getId(),
-                specialityRead.getId(),
-                specialityUpdate.getId(),
-                notificationsManage.getId()
+                rolesManage.getId()
         ));
 
-        roleService.addRolePermissions(studentRole.getId(), Set.of(
-                courseRead.getId(),
-                courseEnroll.getId(),
-                specialityRead.getId()
+        roleService.addRolePermissions(workerRole.getId(), Set.of(
+                userRead.getId()
         ));
 
-        roleService.addRolePermissions(guestRole.getId(), Set.of(
-                courseRead.getId(),
-                courseEnroll.getId(),
-                specialityRead.getId()
+        roleService.addRolePermissions(userRole.getId(), Set.of(
+                userRead.getId()
         ));
 
         // 4. Assign admin role — retry because user-service may still be initializing

@@ -104,9 +104,11 @@ jobs:
           DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
         run: |
           SSH="ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes"
-          $SSH "$TARGET" "mkdir -p '$DEPLOY_PATH/deploy'"
+          $SSH "$TARGET" "mkdir -p '$DEPLOY_PATH/deploy/db'"
           scp -i ~/.ssh/deploy_key -o IdentitiesOnly=yes docker-compose.prod.yml "$TARGET:$DEPLOY_PATH/"
           scp -i ~/.ssh/deploy_key -o IdentitiesOnly=yes deploy/Caddyfile "$TARGET:$DEPLOY_PATH/deploy/"
+          # schemas/roles are created by this script on the first start with an empty Postgres volume
+          scp -i ~/.ssh/deploy_key -o IdentitiesOnly=yes deploy/db/init-schemas.sh "$TARGET:$DEPLOY_PATH/deploy/db/"
       - name: Pull images and restart
         env:
           TARGET: ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}

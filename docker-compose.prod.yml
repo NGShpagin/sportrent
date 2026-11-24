@@ -27,7 +27,7 @@ x-healthcheck: &healthcheck-base
   start_period: 60s
 
 services:
-  # ---------- database: one Postgres, one schema + login role per service (published on 127.0.0.1 only) ----------
+  # ---------- database: one Postgres, one schema + login role per service (port 5432 open for readonly workshop access) ----------
   db:
     image: postgres:17-alpine
     restart: unless-stopped
@@ -40,10 +40,9 @@ services:
       AUTH_DB_PASSWORD: ${AUTH_DB_PASSWORD:?set AUTH_DB_PASSWORD in .env}
       AUTHZ_DB_PASSWORD: ${AUTHZ_DB_PASSWORD:?set AUTHZ_DB_PASSWORD in .env}
       READONLY_DB_PASSWORD: ${READONLY_DB_PASSWORD:?set READONLY_DB_PASSWORD in .env}
-    # loopback only: not reachable from the internet, use an SSH tunnel:
-    #   ssh -L 15432:127.0.0.1:5432 deploy@<server>  ->  psql -h 127.0.0.1 -p 15432 -U readonly saschoolsport
+    # published for workshop students (readonly role only; service roles stay unused from outside)
     ports:
-      - "127.0.0.1:5432:5432"
+      - "5432:5432"
     volumes:
       - db-data:/var/lib/postgresql/data
       # creates the schemas and roles on the first start with an empty volume

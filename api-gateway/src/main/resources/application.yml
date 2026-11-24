@@ -1,0 +1,112 @@
+server:
+  port: 8080
+
+spring:
+  config:
+    # Secrets come from environment variables. For local development they are read from a
+    # gitignored .env file (repo root; "../" covers running from a module directory).
+    import:
+      - "optional:file:.env[.properties]"
+      - "optional:file:../.env[.properties]"
+  application:
+    name: api-gateway
+  cloud:
+    gateway:
+      server:
+        webflux:
+          discovery:
+            locator:
+              enabled: false
+          default-filters:
+            - AddRequestHeader=X-Internal-Api-Key, ${INTERNAL_API_KEY}
+          routes:
+            - id: auth-service
+              uri: lb://auth-service
+              predicates:
+                - Path=/api/auth/**
+              filters:
+                - StripPrefix=2
+
+            # No BFF yet: reads and writes go straight to the owning service.
+            # Permissions are enforced by gateway.authorization.rules below.
+            # Must stay above user-service: /api/me/** would otherwise swallow it.
+            - id: me-permissions
+              uri: lb://authz-service
+              predicates:
+                - Path=/api/me/permissions
+              filters:
+                - StripPrefix=1
+
+            - id: user-service
+              uri: lb://user-service
+              predicates:
+                - Path=/api/users, /api/users/**, /api/me, /api/me/**
+              filters:
+                - StripPrefix=1
+
+            - id: authz-service
+              uri: lb://authz-service
+              predicates:
+                - Path=/api/roles, /api/roles/**, /api/permissions, /api/permissions/**
+              filters:
+                - StripPrefix=1
+
+eureka:
+  instance:
+    lease-renewal-interval-in-seconds: 5
+    lease-expiration-duration-in-seconds: 15
+  client:
+    service-url:
+      defaultZone: http://localhost:8761/eureka/
+    registry-fetch-interval-seconds: 5
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: never
+
+logging:
+  level:
+    "[ru.saschoolsport.gateway]": DEBUG
+    "[org.springframework.cloud.gateway]": INFO
+    "[org.springframework.security]": INFO
+
+jwt:
+  secret: ${JWT_SECRET}
+
+gateway:
+  authorization:
+    enabled: true
+    cache-ttl: 45s
+    rules:
+
+      - methods: [GET, HEAD]
+        paths: ["/api/me/**"]
+
+      - methods: [GET, HEAD]
+        paths: ["/api/users", "/api/users/**"]
+        permission: users:read
+      - methods: [POST]
+        paths: ["/api/users", "/api/users/**"]
+        permission: users:create
+      - methods: [PUT]
+        paths: ["/api/users/**"]
+        permission: users:update
+      - methods: [DELETE]
+        paths: ["/api/users/**"]
+        permission: users:delete
+
+      - methods: [GET, HEAD]
+        paths: ["/api/roles", "/api/roles/**", "/api/permissions", "/api/permissions/**"]
+        permission: roles:manage
+      - methods: [POST, PUT, DELETE]
+        paths: ["/api/roles", "/api/roles/**", "/api/permissions", "/api/permissions/**"]
+        permission: roles:manage
+
+
+app:
+  internal-api-key: ${INTERNAL_API_KEY}

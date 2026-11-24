@@ -1,0 +1,12 @@
+# keep the build context small and never bake secrets into an image
+**/target/
+.git/
+.idea/
+.vscode/
+.e2e/
+.env
+.env.*
+scripts/
+docker-compose*.yml
+**/*.md
+**/*.iml

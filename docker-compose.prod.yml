@@ -1,0 +1,224 @@
+# Full stack for a server (VPS):  databases + Eureka + services + gateway + Caddy (HTTPS).
+# Only Caddy publishes ports (80/443); everything else lives on the internal network.
+#
+#   cp .env.example .env   # fill in ALL values (incl. DOMAIN for HTTPS)
+#   docker compose -f docker-compose.prod.yml up -d --build
+#   docker compose -f docker-compose.prod.yml --profile stubs up -d   # + catalog/cart/order/promocode stubs
+#
+# Images are built locally by default (saschoolsport/<service>:latest). CI (.github/workflows/ci-cd.yml)
+# publishes them to GHCR and deploys with IMAGE_PREFIX=ghcr.io/<owner>/saschoolsport IMAGE_TAG=<git sha>,
+# using `pull` + `up -d --no-build` instead of building on the server.
+#
+# docker-compose.yml stays the "databases only" file for local development and the e2e scripts.
+
+x-service: &service
+  restart: unless-stopped
+  networks: [backend]
+  environment: &service-env
+    EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
+    # register by IP: container hostnames are not resolvable from every other container
+    EUREKA_INSTANCE_PREFER_IP_ADDRESS: "true"
+    JAVA_OPTS: ${JAVA_OPTS:--XX:MaxRAMPercentage=75 -XX:+ExitOnOutOfMemoryError}
+
+x-healthcheck: &healthcheck-base
+  interval: 10s
+  timeout: 3s
+  retries: 12
+  start_period: 60s
+
+services:
+  # ---------- databases (no published ports) ----------
+  users-db: &db
+    image: postgres:17-alpine
+    restart: unless-stopped
+    networks: [backend]
+    environment:
+      POSTGRES_DB: users_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${USERS_DB_PASSWORD:?set USERS_DB_PASSWORD in .env}
+    volumes:
+      - users-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d users_db"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  auth-db:
+    <<: *db
+    environment:
+      POSTGRES_DB: auth_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${AUTH_DB_PASSWORD:?set AUTH_DB_PASSWORD in .env}
+    volumes:
+      - auth-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d auth_db"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  authz-db:
+    <<: *db
+    environment:
+      POSTGRES_DB: authz_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${AUTHZ_DB_PASSWORD:?set AUTHZ_DB_PASSWORD in .env}
+    volumes:
+      - authz-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d authz_db"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # ---------- discovery ----------
+  eureka-server:
+    <<: *service
+    build: { context: ., dockerfile: eureka-server/Dockerfile }
+    image: ${IMAGE_PREFIX:-saschoolsport}/eureka-server:${IMAGE_TAG:-latest}
+    mem_limit: 512m
+    healthcheck:
+      <<: *healthcheck-base
+      test: ["CMD", "curl", "-fsS", "http://localhost:8761/actuator/health"]
+
+  # ---------- business services ----------
+  user-service:
+    <<: *service
+    build: { context: ., dockerfile: user-service/Dockerfile }
+    image: ${IMAGE_PREFIX:-saschoolsport}/user-service:${IMAGE_TAG:-latest}
+    mem_limit: 640m
+    environment:
+      <<: *service-env
+      SPRING_DATASOURCE_URL: jdbc:postgresql://users-db:5432/users_db
+      USERS_DB_PASSWORD: ${USERS_DB_PASSWORD:?}
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY:?set INTERNAL_API_KEY in .env}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?set ADMIN_PASSWORD in .env}
+    depends_on:
+      users-db: { condition: service_healthy }
+      eureka-server: { condition: service_healthy }
+    healthcheck:
+      <<: *healthcheck-base
+      test: ["CMD", "curl", "-fsS", "http://localhost:8081/actuator/health"]
+
+  authz-service:
+    <<: *service
+    build: { context: ., dockerfile: authz-service/Dockerfile }
+    image: ${IMAGE_PREFIX:-saschoolsport}/authz-service:${IMAGE_TAG:-latest}
+    mem_limit: 640m
+    environment:
+      <<: *service-env
+      SPRING_DATASOURCE_URL: jdbc:postgresql://authz-db:5432/authz_db
+      AUTHZ_DB_PASSWORD: ${AUTHZ_DB_PASSWORD:?}
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY:?set INTERNAL_API_KEY in .env}
+    depends_on:
+      authz-db: { condition: service_healthy }
+      eureka-server: { condition: service_healthy }
+      # DataInitializer calls user-service on start-up
+      user-service: { condition: service_healthy }
+    healthcheck:
+      <<: *healthcheck-base
+      test: ["CMD", "curl", "-fsS", "http://localhost:8083/actuator/health"]
+
+  auth-service:
+    <<: *service
+    build: { context: ., dockerfile: auth-service/Dockerfile }
+    image: ${IMAGE_PREFIX:-saschoolsport}/auth-service:${IMAGE_TAG:-latest}
+    mem_limit: 640m
+    environment:
+      <<: *service-env
+      SPRING_DATASOURCE_URL: jdbc:postgresql://auth-db:5432/auth_db
+      AUTH_DB_PASSWORD: ${AUTH_DB_PASSWORD:?}
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY:?set INTERNAL_API_KEY in .env}
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
+    depends_on:
+      auth-db: { condition: service_healthy }
+      eureka-server: { condition: service_healthy }
+      user-service: { condition: service_healthy }
+      authz-service: { condition: service_healthy }
+    healthcheck:
+      <<: *healthcheck-base
+      test: ["CMD", "curl", "-fsS", "http://localhost:8082/actuator/health"]
+
+  # ---------- gateway (reachable only through Caddy) ----------
+  api-gateway:
+    <<: *service
+    build: { context: ., dockerfile: api-gateway/Dockerfile }
+    image: ${IMAGE_PREFIX:-saschoolsport}/api-gateway:${IMAGE_TAG:-latest}
+    mem_limit: 640m
+    environment:
+      <<: *service-env
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY:?set INTERNAL_API_KEY in .env}
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
+    depends_on:
+      eureka-server: { condition: service_healthy }
+      user-service: { condition: service_healthy }
+      auth-service: { condition: service_healthy }
+      authz-service: { condition: service_healthy }
+    healthcheck:
+      <<: *healthcheck-base
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/actuator/health"]
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    networks: [backend]
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      DOMAIN: ${DOMAIN:-localhost}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      api-gateway: { condition: service_healthy }
+
+  # ---------- stubs: not wired into the gateway yet (docker compose --profile stubs up -d) ----------
+  catalog-service:
+    <<: *service
+    profiles: [stubs]
+    build: { context: ., dockerfile: catalog-service/Dockerfile }
+    image: ${IMAGE_PREFIX:-saschoolsport}/catalog-service:${IMAGE_TAG:-latest}
+    mem_limit: 512m
+    depends_on:
+      eureka-server: { condition: service_healthy }
+
+  cart-service:
+    <<: *service
+    profiles: [stubs]
+    build: { context: ., dockerfile: cart-service/Dockerfile }
+    image: ${IMAGE_PREFIX:-saschoolsport}/cart-service:${IMAGE_TAG:-latest}
+    mem_limit: 512m
+    depends_on:
+      eureka-server: { condition: service_healthy }
+
+  order-service:
+    <<: *service
+    profiles: [stubs]
+    build: { context: ., dockerfile: order-service/Dockerfile }
+    image: ${IMAGE_PREFIX:-saschoolsport}/order-service:${IMAGE_TAG:-latest}
+    mem_limit: 512m
+    depends_on:
+      eureka-server: { condition: service_healthy }
+
+  promocode-service:
+    <<: *service
+    profiles: [stubs]
+    build: { context: ., dockerfile: promocode-service/Dockerfile }
+    image: ${IMAGE_PREFIX:-saschoolsport}/promocode-service:${IMAGE_TAG:-latest}
+    mem_limit: 512m
+    depends_on:
+      eureka-server: { condition: service_healthy }
+
+networks:
+  backend:
+
+volumes:
+  users-db-data:
+  auth-db-data:
+  authz-db-data:
+  caddy-data:
+  caddy-config:

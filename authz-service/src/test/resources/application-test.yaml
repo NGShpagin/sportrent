@@ -1,0 +1,10 @@
+# Used by tests that start a Spring context (@DataJpaTest). No Eureka, no real secrets.
+spring:
+  cloud:
+    discovery:
+      enabled: false
+eureka:
+  client:
+    enabled: false
+app:
+  internal-api-key: test-key

@@ -1,0 +1,139 @@
+# CI/CD:
+#   pull request / push -> unit tests
+#   push to main        -> build + push Docker images to GHCR -> deploy to the server over SSH
+#
+# One-time setup (Settings -> Environments -> "production"; add required reviewers there if you
+# want a manual approval before every deploy). Environment secrets:
+#   DEPLOY_HOST         server address
+#   DEPLOY_USER         ssh user (must be allowed to run docker)
+#   DEPLOY_SSH_KEY      private key of a dedicated deploy key (ssh-keygen -t ed25519)
+#   DEPLOY_KNOWN_HOSTS  output of `ssh-keyscan -t ed25519 <host>` (pins the host key, no TOFU)
+#   DEPLOY_PATH         directory on the server, e.g. /opt/saschoolsport (holds the real .env)
+# The server needs Docker + the compose plugin and a filled-in $DEPLOY_PATH/.env (never sent by CI).
+
+name: ci-cd
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-cd-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "25"
+          cache: maven
+      - run: mvn -B -ntp verify
+
+  images:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        service:
+          - eureka-server
+          - api-gateway
+          - user-service
+          - auth-service
+          - authz-service
+          - catalog-service
+          - cart-service
+          - order-service
+          - promocode-service
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Image name (GHCR requires lowercase)
+        run: echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/saschoolsport/${{ matrix.service }}" >> "$GITHUB_ENV"
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.service }}/Dockerfile
+          push: true
+          tags: |
+            ${{ env.IMAGE }}:${{ github.sha }}
+            ${{ env.IMAGE }}:latest
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}
+
+  deploy:
+    needs: images
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      contents: read
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare SSH
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+      - name: Copy compose file and Caddyfile
+        env:
+          TARGET: ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+        run: |
+          SSH="ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes"
+          $SSH "$TARGET" "mkdir -p '$DEPLOY_PATH/deploy'"
+          scp -i ~/.ssh/deploy_key -o IdentitiesOnly=yes docker-compose.prod.yml "$TARGET:$DEPLOY_PATH/"
+          scp -i ~/.ssh/deploy_key -o IdentitiesOnly=yes deploy/Caddyfile "$TARGET:$DEPLOY_PATH/deploy/"
+      - name: Pull images and restart
+        env:
+          TARGET: ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+          REGISTRY_USER: ${{ github.actor }}
+          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PREFIX="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/saschoolsport"
+          # the registry token is short-lived (this job only), so it travels on stdin, not in argv
+          printf '%s' "$REGISTRY_TOKEN" | ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes "$TARGET" \
+            "set -e; cd '$DEPLOY_PATH'
+             docker login ghcr.io -u '$REGISTRY_USER' --password-stdin
+             export IMAGE_PREFIX='$PREFIX' IMAGE_TAG='$GITHUB_SHA'
+             docker compose -f docker-compose.prod.yml pull
+             docker compose -f docker-compose.prod.yml up -d --no-build --remove-orphans
+             docker logout ghcr.io
+             docker image prune -f"
+      - name: Wait until the stack is healthy
+        env:
+          TARGET: ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+        run: |
+          ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes "$TARGET" "cd '$DEPLOY_PATH'
+            export IMAGE_TAG='$GITHUB_SHA'
+            for i in \$(seq 1 36); do
+              bad=\$(docker compose -f docker-compose.prod.yml ps --format '{{.Service}} {{.Health}}' | awk '\$2!=\"healthy\" && \$2!=\"\"' || true)
+              [ -z \"\$bad\" ] && echo 'all services healthy' && exit 0
+              echo \"waiting: \$bad\"; sleep 10
+            done
+            docker compose -f docker-compose.prod.yml ps; exit 1"

@@ -1,0 +1,17 @@
+# Public entry point: TLS termination + reverse proxy to the gateway (the only exposed service).
+# DOMAIN comes from .env; "localhost" gives a local self-signed certificate for a dry run.
+{$DOMAIN:localhost} {
+	encode zstd gzip
+
+	# Never publish actuator endpoints; the compose healthchecks use the internal network.
+	@actuator path /actuator /actuator/*
+	respond @actuator 404
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		-Server
+	}
+
+	reverse_proxy api-gateway:8080
+}

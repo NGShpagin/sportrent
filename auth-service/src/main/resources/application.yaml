@@ -1,0 +1,94 @@
+server:
+  port: 8082
+
+spring:
+  config:
+    # Secrets come from environment variables. For local development they are read from a
+    # gitignored .env file (repo root; "../" covers running from a module directory).
+    import:
+      - "optional:file:.env[.properties]"
+      - "optional:file:../.env[.properties]"
+  application:
+    name: auth-service
+  datasource:
+    url: jdbc:postgresql://localhost:5433/auth_db
+    username: postgres
+    password: ${AUTH_DB_PASSWORD}
+    driver-class-name: org.postgresql.Driver
+  jpa:
+    # Off on purpose: AuthService makes remote calls between short transactions and relies on
+    # each repository call seeing fresh data (no request-wide persistence context).
+    open-in-view: false
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+  cloud:
+    loadbalancer:
+      cache:
+        ttl: 5s
+    openfeign:
+      circuitbreaker:
+        enabled: true
+      client:
+        config:
+          default:
+            connect-timeout: 2000
+            read-timeout: 5000
+
+jwt:
+  secret: ${JWT_SECRET}
+
+app:
+  internal-api-key: ${INTERNAL_API_KEY}
+  security:
+    access-token-ttl: PT15M # 15 мин
+    refresh-token-ttl: P7D  # 7 дней
+    session-ttl: P30D # 30 дней
+
+resilience4j:
+  circuitbreaker:
+    # "configs.default" applies to every circuit breaker (Feign creates one per client method,
+    # so "instances.default" would only affect a breaker literally named "default").
+    configs:
+      default:
+        sliding-window-size: 10
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 10s
+        permitted-number-of-calls-in-half-open-state: 3
+        # 4xx answers are business outcomes (wrong password, unknown user), not outages:
+        # they must not open the breaker and lock everybody out of user-service.
+        ignore-exceptions:
+          - feign.FeignException$BadRequest
+          - feign.FeignException$Unauthorized
+          - feign.FeignException$Forbidden
+          - feign.FeignException$NotFound
+          - feign.FeignException$Conflict
+  timelimiter:
+    configs:
+      default:
+        # Spring Cloud's default is 1s, which would cut Feign's read-timeout (5s) short.
+        # Keep this above connect-timeout + read-timeout.
+        timeout-duration: 8s
+
+logging:
+  level:
+    "[ru.saschoolsport.auth]": DEBUG
+    "[org.springframework.security]": INFO
+
+eureka:
+  instance:
+    lease-renewal-interval-in-seconds: 5
+    lease-expiration-duration-in-seconds: 15
+  client:
+    service-url:
+      defaultZone: http://localhost:8761/eureka/
+    registry-fetch-interval-seconds: 5
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: never

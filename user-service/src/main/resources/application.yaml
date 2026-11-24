@@ -11,8 +11,8 @@ spring:
   application:
     name: user-service
   datasource:
-    url: jdbc:postgresql://localhost:5432/users_db
-    username: postgres
+    url: jdbc:postgresql://localhost:5432/saschoolsport?currentSchema=users
+    username: users_svc
     password: ${USERS_DB_PASSWORD}
     driver-class-name: org.postgresql.Driver
   jpa:

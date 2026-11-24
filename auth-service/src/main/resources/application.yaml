@@ -11,8 +11,8 @@ spring:
   application:
     name: auth-service
   datasource:
-    url: jdbc:postgresql://localhost:5433/auth_db
-    username: postgres
+    url: jdbc:postgresql://localhost:5432/saschoolsport?currentSchema=auth
+    username: auth_svc
     password: ${AUTH_DB_PASSWORD}
     driver-class-name: org.postgresql.Driver
   jpa:

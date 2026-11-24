@@ -42,3 +42,11 @@ build/
 
 ### e2e scripts output ###
 .e2e/
+
+### Secrets: never commit keys ###
+deploy_key
+deploy_key.pub
+id_ed25519*
+id_rsa*
+*.pem
+*.key

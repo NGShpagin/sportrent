@@ -27,47 +27,29 @@ x-healthcheck: &healthcheck-base
   start_period: 60s
 
 services:
-  # ---------- databases (no published ports) ----------
-  users-db: &db
+  # ---------- database: one Postgres, one schema + login role per service (published on 127.0.0.1 only) ----------
+  db:
     image: postgres:17-alpine
     restart: unless-stopped
     networks: [backend]
     environment:
-      POSTGRES_DB: users_db
+      POSTGRES_DB: saschoolsport
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: ${USERS_DB_PASSWORD:?set USERS_DB_PASSWORD in .env}
+      POSTGRES_PASSWORD: ${DB_ADMIN_PASSWORD:?set DB_ADMIN_PASSWORD in .env}
+      USERS_DB_PASSWORD: ${USERS_DB_PASSWORD:?set USERS_DB_PASSWORD in .env}
+      AUTH_DB_PASSWORD: ${AUTH_DB_PASSWORD:?set AUTH_DB_PASSWORD in .env}
+      AUTHZ_DB_PASSWORD: ${AUTHZ_DB_PASSWORD:?set AUTHZ_DB_PASSWORD in .env}
+      READONLY_DB_PASSWORD: ${READONLY_DB_PASSWORD:?set READONLY_DB_PASSWORD in .env}
+    # loopback only: not reachable from the internet, use an SSH tunnel:
+    #   ssh -L 15432:127.0.0.1:5432 deploy@<server>  ->  psql -h 127.0.0.1 -p 15432 -U readonly saschoolsport
+    ports:
+      - "127.0.0.1:5432:5432"
     volumes:
-      - users-db-data:/var/lib/postgresql/data
+      - db-data:/var/lib/postgresql/data
+      # creates the schemas and roles on the first start with an empty volume
+      - ./deploy/db:/docker-entrypoint-initdb.d:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d users_db"]
-      interval: 5s
-      timeout: 3s
-      retries: 10
-
-  auth-db:
-    <<: *db
-    environment:
-      POSTGRES_DB: auth_db
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: ${AUTH_DB_PASSWORD:?set AUTH_DB_PASSWORD in .env}
-    volumes:
-      - auth-db-data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d auth_db"]
-      interval: 5s
-      timeout: 3s
-      retries: 10
-
-  authz-db:
-    <<: *db
-    environment:
-      POSTGRES_DB: authz_db
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: ${AUTHZ_DB_PASSWORD:?set AUTHZ_DB_PASSWORD in .env}
-    volumes:
-      - authz-db-data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d authz_db"]
+      test: ["CMD-SHELL", "pg_isready -U postgres -d saschoolsport"]
       interval: 5s
       timeout: 3s
       retries: 10
@@ -90,12 +72,12 @@ services:
     mem_limit: 640m
     environment:
       <<: *service-env
-      SPRING_DATASOURCE_URL: jdbc:postgresql://users-db:5432/users_db
+      SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/saschoolsport?currentSchema=users
       USERS_DB_PASSWORD: ${USERS_DB_PASSWORD:?}
       INTERNAL_API_KEY: ${INTERNAL_API_KEY:?set INTERNAL_API_KEY in .env}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:?set ADMIN_PASSWORD in .env}
     depends_on:
-      users-db: { condition: service_healthy }
+      db: { condition: service_healthy }
       eureka-server: { condition: service_healthy }
     healthcheck:
       <<: *healthcheck-base
@@ -108,11 +90,11 @@ services:
     mem_limit: 640m
     environment:
       <<: *service-env
-      SPRING_DATASOURCE_URL: jdbc:postgresql://authz-db:5432/authz_db
+      SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/saschoolsport?currentSchema=authz
       AUTHZ_DB_PASSWORD: ${AUTHZ_DB_PASSWORD:?}
       INTERNAL_API_KEY: ${INTERNAL_API_KEY:?set INTERNAL_API_KEY in .env}
     depends_on:
-      authz-db: { condition: service_healthy }
+      db: { condition: service_healthy }
       eureka-server: { condition: service_healthy }
       # DataInitializer calls user-service on start-up
       user-service: { condition: service_healthy }
@@ -127,12 +109,12 @@ services:
     mem_limit: 640m
     environment:
       <<: *service-env
-      SPRING_DATASOURCE_URL: jdbc:postgresql://auth-db:5432/auth_db
+      SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/saschoolsport?currentSchema=auth
       AUTH_DB_PASSWORD: ${AUTH_DB_PASSWORD:?}
       INTERNAL_API_KEY: ${INTERNAL_API_KEY:?set INTERNAL_API_KEY in .env}
       JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
     depends_on:
-      auth-db: { condition: service_healthy }
+      db: { condition: service_healthy }
       eureka-server: { condition: service_healthy }
       user-service: { condition: service_healthy }
       authz-service: { condition: service_healthy }
@@ -217,8 +199,6 @@ networks:
   backend:
 
 volumes:
-  users-db-data:
-  auth-db-data:
-  authz-db-data:
+  db-data:
   caddy-data:
   caddy-config:

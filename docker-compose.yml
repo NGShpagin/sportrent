@@ -1,59 +1,29 @@
-# Local development databases. Ports match each service's application.yaml;
-# passwords come from .env (see .env.example).
+# Local development database: ONE Postgres, one schema (and one login role) per service.
+# Schemas/roles are created by deploy/db/init-schemas.sh the first time the volume is empty.
+# Passwords come from .env (see .env.example).
 #   docker compose up -d
 services:
-  users-db:
+  db:
     image: postgres:17-alpine
-    container_name: saschoolsport-users-db
+    container_name: saschoolsport-db
     environment:
-      POSTGRES_DB: users_db
+      POSTGRES_DB: saschoolsport
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: ${USERS_DB_PASSWORD:?set USERS_DB_PASSWORD in .env}
+      POSTGRES_PASSWORD: ${DB_ADMIN_PASSWORD:?set DB_ADMIN_PASSWORD in .env}
+      USERS_DB_PASSWORD: ${USERS_DB_PASSWORD:?set USERS_DB_PASSWORD in .env}
+      AUTH_DB_PASSWORD: ${AUTH_DB_PASSWORD:?set AUTH_DB_PASSWORD in .env}
+      AUTHZ_DB_PASSWORD: ${AUTHZ_DB_PASSWORD:?set AUTHZ_DB_PASSWORD in .env}
+      READONLY_DB_PASSWORD: ${READONLY_DB_PASSWORD:?set READONLY_DB_PASSWORD in .env}
     ports:
       - "5432:5432"
     volumes:
-      - users-db-data:/var/lib/postgresql/data
+      - db-data:/var/lib/postgresql/data
+      - ./deploy/db:/docker-entrypoint-initdb.d:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d users_db"]
-      interval: 5s
-      timeout: 3s
-      retries: 10
-
-  auth-db:
-    image: postgres:17-alpine
-    container_name: saschoolsport-auth-db
-    environment:
-      POSTGRES_DB: auth_db
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: ${AUTH_DB_PASSWORD:?set AUTH_DB_PASSWORD in .env}
-    ports:
-      - "5433:5432"
-    volumes:
-      - auth-db-data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d auth_db"]
-      interval: 5s
-      timeout: 3s
-      retries: 10
-
-  authz-db:
-    image: postgres:17-alpine
-    container_name: saschoolsport-authz-db
-    environment:
-      POSTGRES_DB: authz_db
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: ${AUTHZ_DB_PASSWORD:?set AUTHZ_DB_PASSWORD in .env}
-    ports:
-      - "5434:5432"
-    volumes:
-      - authz-db-data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d authz_db"]
+      test: ["CMD-SHELL", "pg_isready -U postgres -d saschoolsport"]
       interval: 5s
       timeout: 3s
       retries: 10
 
 volumes:
-  users-db-data:
-  auth-db-data:
-  authz-db-data:
+  db-data:

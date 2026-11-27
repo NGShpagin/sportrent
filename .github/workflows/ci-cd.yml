@@ -110,6 +110,8 @@ jobs:
           scp -i ~/.ssh/deploy_key -o IdentitiesOnly=yes deploy/Caddyfile "$TARGET:$DEPLOY_PATH/deploy/"
           # schemas/roles are created by this script on the first start with an empty Postgres volume
           scp -i ~/.ssh/deploy_key -o IdentitiesOnly=yes deploy/db/init-schemas.sh "$TARGET:$DEPLOY_PATH/deploy/db/"
+          # idempotent role/schema fix-ups for services added after the volume already existed
+          scp -i ~/.ssh/deploy_key -o IdentitiesOnly=yes deploy/ensure-schemas.sh "$TARGET:$DEPLOY_PATH/deploy/"
       - name: Ensure required .env keys
         env:
           TARGET: ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}
@@ -162,6 +164,16 @@ jobs:
              docker login ghcr.io -u '$REGISTRY_USER' --password-stdin
              export IMAGE_PREFIX='$PREFIX' IMAGE_TAG='$GITHUB_SHA'
              docker compose -f docker-compose.prod.yml pull
+             docker compose -f docker-compose.prod.yml up -d --no-build --remove-orphans db
+             # wait until Postgres accepts connections, then ensure roles/schemas for services
+             # added after the data volume was first created (init-schemas.sh will not re-run)
+             for i in \$(seq 1 30); do
+               docker compose -f docker-compose.prod.yml exec -T db \
+                 pg_isready -U postgres -d saschoolsport && break
+               sleep 2
+             done
+             docker compose -f docker-compose.prod.yml exec -T db \
+               bash < deploy/ensure-schemas.sh
              docker compose -f docker-compose.prod.yml up -d --no-build --remove-orphans
              docker logout ghcr.io
              docker image prune -f"

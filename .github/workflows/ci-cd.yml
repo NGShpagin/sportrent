@@ -9,7 +9,8 @@
 #   DEPLOY_SSH_KEY      private key of a dedicated deploy key (ssh-keygen -t ed25519)
 #   DEPLOY_KNOWN_HOSTS  output of `ssh-keyscan -t ed25519 <host>` (pins the host key, no TOFU)
 #   DEPLOY_PATH         directory on the server, e.g. /opt/saschoolsport (holds the real .env)
-# The server needs Docker + the compose plugin and a filled-in $DEPLOY_PATH/.env (never sent by CI).
+# The server needs Docker + the compose plugin. .env is never uploaded by CI; on deploy we only
+# append any missing required keys (generated on the server), never overwrite existing values.
 
 name: ci-cd
 
@@ -109,6 +110,44 @@ jobs:
           scp -i ~/.ssh/deploy_key -o IdentitiesOnly=yes deploy/Caddyfile "$TARGET:$DEPLOY_PATH/deploy/"
           # schemas/roles are created by this script on the first start with an empty Postgres volume
           scp -i ~/.ssh/deploy_key -o IdentitiesOnly=yes deploy/db/init-schemas.sh "$TARGET:$DEPLOY_PATH/deploy/db/"
+      - name: Ensure required .env keys
+        env:
+          TARGET: ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+        run: |
+          # Append only missing keys required by docker-compose.prod.yml. Never overwrite.
+          # Values are generated on the server so secrets never transit through the workflow logs.
+          ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes "$TARGET" \
+            "DEPLOY_PATH='$DEPLOY_PATH' bash -s" <<'EOF'
+          set -euo pipefail
+          cd "$DEPLOY_PATH"
+          touch .env
+          chmod 600 .env
+
+          has_key() { grep -qE "^$1=" .env; }
+
+          # usage: ensure_key KEY [generator-command...]
+          ensure_key() {
+            local key="$1"; shift
+            if has_key "$key"; then
+              return 0
+            fi
+            local value
+            value="$("$@")"
+            printf '%s=%s\n' "$key" "$value" >> .env
+            echo "appended missing $key"
+          }
+
+          ensure_key DB_ADMIN_PASSWORD     openssl rand -base64 24
+          ensure_key USERS_DB_PASSWORD     openssl rand -base64 24
+          ensure_key AUTH_DB_PASSWORD      openssl rand -base64 24
+          ensure_key AUTHZ_DB_PASSWORD     openssl rand -base64 24
+          ensure_key CART_DB_PASSWORD      openssl rand -base64 24
+          ensure_key READONLY_DB_PASSWORD  openssl rand -base64 24
+          ensure_key INTERNAL_API_KEY      openssl rand -hex 32
+          ensure_key JWT_SECRET            openssl rand -base64 48
+          ensure_key ADMIN_PASSWORD        openssl rand -base64 18
+          EOF
       - name: Pull images and restart
         env:
           TARGET: ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}

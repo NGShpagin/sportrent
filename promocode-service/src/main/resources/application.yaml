@@ -2,8 +2,29 @@ server:
   port: 8087
 
 spring:
+  config:
+    # Secrets come from environment variables. For local development they are read from a
+    # gitignored .env file (repo root; "../" covers running from a module directory).
+    import:
+      - "optional:file:.env[.properties]"
+      - "optional:file:../.env[.properties]"
   application:
     name: promocode-service
+  datasource:
+    url: jdbc:postgresql://localhost:5432/saschoolsport?currentSchema=promocodes
+    username: promocodes_svc
+    password: ${PROMOCODE_DB_PASSWORD}
+    driver-class-name: org.postgresql.Driver
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: false
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+    baseline-version: "1"
+    schemas: [promocodes]
+    default-schema: promocodes
 
 eureka:
   instance:

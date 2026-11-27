@@ -20,8 +20,14 @@ spring:
     # each repository call seeing fresh data (no request-wide persistence context).
     open-in-view: false
     hibernate:
-      ddl-auto: update
+      ddl-auto: validate
     show-sql: false
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+    baseline-version: "1"
+    schemas: [auth]
+    default-schema: auth
   cloud:
     loadbalancer:
       cache:

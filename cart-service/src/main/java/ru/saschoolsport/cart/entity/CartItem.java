@@ -22,8 +22,8 @@ public class CartItem {
     @JoinColumn(name = "cart_id", nullable = false)
     private Cart cart;
 
-    @Column(name = "item_id", nullable = false)
-    private UUID itemId;
+    @Column(name = "equipment_id", nullable = false)
+    private UUID equipmentId;
 
     @Column(name = "quantity", nullable = false)
     private Integer quantity;

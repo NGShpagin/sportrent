@@ -3,7 +3,7 @@
 #
 #   cp .env.example .env   # fill in ALL values (incl. DOMAIN for HTTPS)
 #   docker compose -f docker-compose.prod.yml up -d --build
-#   docker compose -f docker-compose.prod.yml --profile stubs up -d   # + catalog/order/promocode stubs
+#   docker compose -f docker-compose.prod.yml --profile stubs up -d   # + catalog stubs
 #
 # Images are built locally by default (saschoolsport/<service>:latest). CI (.github/workflows/ci-cd.yml)
 # publishes them to GHCR and deploys with IMAGE_PREFIX=ghcr.io/<owner>/saschoolsport IMAGE_TAG=<git sha>,
@@ -40,6 +40,8 @@ services:
       AUTH_DB_PASSWORD: ${AUTH_DB_PASSWORD:?set AUTH_DB_PASSWORD in .env}
       AUTHZ_DB_PASSWORD: ${AUTHZ_DB_PASSWORD:?set AUTHZ_DB_PASSWORD in .env}
       CART_DB_PASSWORD: ${CART_DB_PASSWORD:?set CART_DB_PASSWORD in .env}
+      ORDER_DB_PASSWORD: ${ORDER_DB_PASSWORD:?set ORDER_DB_PASSWORD in .env}
+      PROMOCODE_DB_PASSWORD: ${PROMOCODE_DB_PASSWORD:?set PROMOCODE_DB_PASSWORD in .env}
       READONLY_DB_PASSWORD: ${READONLY_DB_PASSWORD:?set READONLY_DB_PASSWORD in .env}
     # published for workshop students (readonly role only; service roles stay unused from outside)
     ports:
@@ -139,6 +141,40 @@ services:
       <<: *healthcheck-base
       test: ["CMD", "curl", "-fsS", "http://localhost:8085/actuator/health"]
 
+  order-service:
+    <<: *service
+    build: { context: ., dockerfile: order-service/Dockerfile }
+    image: ${IMAGE_PREFIX:-saschoolsport}/order-service:${IMAGE_TAG:-latest}
+    mem_limit: 640m
+    environment:
+      <<: *service-env
+      SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/saschoolsport?currentSchema=orders
+      ORDER_DB_PASSWORD: ${ORDER_DB_PASSWORD:?}
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY:?set INTERNAL_API_KEY in .env}
+    depends_on:
+      db: { condition: service_healthy }
+      eureka-server: { condition: service_healthy }
+    healthcheck:
+      <<: *healthcheck-base
+      test: ["CMD", "curl", "-fsS", "http://localhost:8086/actuator/health"]
+
+  promocode-service:
+    <<: *service
+    build: { context: ., dockerfile: promocode-service/Dockerfile }
+    image: ${IMAGE_PREFIX:-saschoolsport}/promocode-service:${IMAGE_TAG:-latest}
+    mem_limit: 512m
+    environment:
+      <<: *service-env
+      SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/saschoolsport?currentSchema=promocodes
+      PROMOCODE_DB_PASSWORD: ${PROMOCODE_DB_PASSWORD:?}
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY:?set INTERNAL_API_KEY in .env}
+    depends_on:
+      db: { condition: service_healthy }
+      eureka-server: { condition: service_healthy }
+    healthcheck:
+      <<: *healthcheck-base
+      test: ["CMD", "curl", "-fsS", "http://localhost:8087/actuator/health"]
+
   # ---------- gateway (reachable only through Caddy) ----------
   api-gateway:
     <<: *service
@@ -181,24 +217,6 @@ services:
     profiles: [stubs]
     build: { context: ., dockerfile: catalog-service/Dockerfile }
     image: ${IMAGE_PREFIX:-saschoolsport}/catalog-service:${IMAGE_TAG:-latest}
-    mem_limit: 512m
-    depends_on:
-      eureka-server: { condition: service_healthy }
-
-  order-service:
-    <<: *service
-    profiles: [stubs]
-    build: { context: ., dockerfile: order-service/Dockerfile }
-    image: ${IMAGE_PREFIX:-saschoolsport}/order-service:${IMAGE_TAG:-latest}
-    mem_limit: 512m
-    depends_on:
-      eureka-server: { condition: service_healthy }
-
-  promocode-service:
-    <<: *service
-    profiles: [stubs]
-    build: { context: ., dockerfile: promocode-service/Dockerfile }
-    image: ${IMAGE_PREFIX:-saschoolsport}/promocode-service:${IMAGE_TAG:-latest}
     mem_limit: 512m
     depends_on:
       eureka-server: { condition: service_healthy }

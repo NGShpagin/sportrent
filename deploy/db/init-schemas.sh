@@ -2,7 +2,7 @@
 # One database, one schema per service. Each service gets its own login role that owns only its
 # schema, so a service cannot read or modify another service's tables.
 #
-# Stub services (catalog/cart/orders/promocode) get an empty schema only — no login role yet,
+# Stub services (catalog/orders/promocode) get an empty schema only — no login role yet,
 # because those services are not wired to Postgres.
 #
 # Also creates the "readonly" role (SELECT on all schemas).
@@ -37,9 +37,9 @@ SQL
 create_schema users users_svc "${USERS_DB_PASSWORD:?}"
 create_schema auth  auth_svc  "${AUTH_DB_PASSWORD:?}"
 create_schema authz authz_svc "${AUTHZ_DB_PASSWORD:?}"
+create_schema cart cart_svc "${CART_DB_PASSWORD:?}"
 
 create_empty_schema catalog
-create_empty_schema cart
 create_empty_schema orders
 create_empty_schema promocode
 

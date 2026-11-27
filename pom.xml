@@ -51,6 +51,12 @@
         <jackson2-bom.version>2.21.8</jackson2-bom.version>
         <jackson3-bom.version>3.1.8</jackson3-bom.version>
         <netty-bom.version>4.2.21.Final</netty-bom.version>
+        <!-- pgjdbc <=42.7.14: CVE-2026-134841..134844 (+ related); fixed in 42.7.15 -->
+        <postgresql.version>42.7.15</postgresql.version>
+        <!-- Tomcat embed <=11.0.27: CVE-2026-116561/116830/118028/118233 (+ related); fixed in 11.0.29 -->
+        <tomcat.version>11.0.29</tomcat.version>
+        <!-- H2 <=2.5.250: WS-2026-0186 (JDBC URL injection), WS-2026-0187 (unsafe deserialization); fixed in 2.5.252 -->
+        <h2.version>2.5.252</h2.version>
 
     </properties>
 
@@ -210,6 +216,52 @@
                 <groupId>org.json</groupId>
                 <artifactId>json</artifactId>
                 <version>${org-json.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.postgresql</groupId>
+                <artifactId>postgresql</artifactId>
+                <version>${postgresql.version}</version>
+            </dependency>
+            <!-- Boot 4.1.2 still manages Tomcat 11.0.27; pin the whole set Boot knows about -->
+            <dependency>
+                <groupId>org.apache.tomcat</groupId>
+                <artifactId>tomcat-annotations-api</artifactId>
+                <version>${tomcat.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.tomcat</groupId>
+                <artifactId>tomcat-jdbc</artifactId>
+                <version>${tomcat.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.tomcat</groupId>
+                <artifactId>tomcat-jsp-api</artifactId>
+                <version>${tomcat.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.tomcat.embed</groupId>
+                <artifactId>tomcat-embed-core</artifactId>
+                <version>${tomcat.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.tomcat.embed</groupId>
+                <artifactId>tomcat-embed-el</artifactId>
+                <version>${tomcat.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.tomcat.embed</groupId>
+                <artifactId>tomcat-embed-jasper</artifactId>
+                <version>${tomcat.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.tomcat.embed</groupId>
+                <artifactId>tomcat-embed-websocket</artifactId>
+                <version>${tomcat.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.h2database</groupId>
+                <artifactId>h2</artifactId>
+                <version>${h2.version}</version>
             </dependency>
         </dependencies>
     </dependencyManagement>

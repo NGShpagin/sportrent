@@ -2,8 +2,23 @@ server:
   port: 8085
 
 spring:
+  config:
+    # Secrets come from environment variables. For local development they are read from a
+    # gitignored .env file (repo root; "../" covers running from a module directory).
+    import:
+      - "optional:file:.env[.properties]"
+      - "optional:file:../.env[.properties]"
   application:
     name: cart-service
+  datasource:
+    url: jdbc:postgresql://localhost:5432/saschoolsport?currentSchema=cart
+    username: cart_svc
+    password: ${CART_DB_PASSWORD}
+    driver-class-name: org.postgresql.Driver
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: false
 
 eureka:
   instance:

@@ -14,8 +14,8 @@ import java.util.UUID;
 @Table(
         name = "carts",
         check = @CheckConstraint(
-                name = "carts_rental_period_chk",
-                constraint = "rental_start is null or rental_end is null or rental_start <= rental_end"
+                name = "carts_rental_duration_chk",
+                constraint = "rent_duration_hours is null or rent_duration_hours > 0"
         )
 )
 @Getter
@@ -28,31 +28,28 @@ public class Cart {
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
-    @Column(name = "user_id", nullable = false)
+    @Column(name = "user_id", nullable = false, comment = "Идентификатор пользователя (владелец корзины, из JWT)")
     private UUID userId;
 
-    @Column(name = "rental_start")
+    @Column(name = "rental_start", comment = "Плановая дата начала аренды")
     private LocalDate rentalStart;
 
-    @Column(name = "rental_end")
-    private LocalDate rentalEnd;
+    @Column(name = "rent_duration_hours", comment = "Плановая длительность аренды, ч")
+    private Integer rentDurationHours;
 
-    @Column(name = "pickup_point_id")
+    @Column(name = "pickup_point_id", comment = "ID пункта выдачи")
     private UUID pickupPointId;
 
     @CreationTimestamp
-    @Column(name = "created_at", updatable = false, nullable = false)
+    @Column(name = "created_at", updatable = false, nullable = false, comment = "Время создания записи")
     private Instant createdAt;
 
     @UpdateTimestamp
-    @Column(name = "updated_at")
+    @Column(name = "updated_at", comment = "Время обновления записи")
     private Instant updatedAt;
 
-    @AssertTrue(message = "rental_start must not be after rental_end")
-    public boolean isRentalPeriodValid() {
-        if (rentalStart == null || rentalEnd == null) {
-            return true;
-        }
-        return !rentalStart.isAfter(rentalEnd);
+    @AssertTrue(message = "rent_duration_hours must be positive when set")
+    public boolean isRentalDurationValid() {
+        return rentDurationHours == null || rentDurationHours > 0;
     }
 }

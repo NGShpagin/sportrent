@@ -147,6 +147,7 @@ jobs:
           ensure_key CART_DB_PASSWORD      openssl rand -base64 24
           ensure_key ORDER_DB_PASSWORD     openssl rand -base64 24
           ensure_key PROMOCODE_DB_PASSWORD openssl rand -base64 24
+          ensure_key CATALOG_DB_PASSWORD   openssl rand -base64 24
           ensure_key READONLY_DB_PASSWORD  openssl rand -base64 24
           ensure_key INTERNAL_API_KEY      openssl rand -hex 32
           ensure_key JWT_SECRET            openssl rand -base64 48

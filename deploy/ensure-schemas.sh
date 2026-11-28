@@ -33,3 +33,4 @@ SQL
 ensure_schema cart cart_svc "${CART_DB_PASSWORD:?}"
 ensure_schema orders orders_svc "${ORDER_DB_PASSWORD:?}"
 ensure_schema promocodes promocodes_svc "${PROMOCODE_DB_PASSWORD:?}"
+ensure_schema catalog catalog_svc "${CATALOG_DB_PASSWORD:?}"

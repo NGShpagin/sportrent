@@ -2,8 +2,7 @@ package ru.saschoolsport.promocode.repository;
 
 import org.springframework.data.jpa.repository.JpaRepository;
 import ru.saschoolsport.promocode.entity.PromocodeUsed;
+import ru.saschoolsport.promocode.entity.PromocodeUsedId;
 
-import java.util.UUID;
-
-public interface PromocodeUsedRepository extends JpaRepository<PromocodeUsed, UUID> {
+public interface PromocodeUsedRepository extends JpaRepository<PromocodeUsed, PromocodeUsedId> {
 }

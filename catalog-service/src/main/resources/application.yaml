@@ -2,8 +2,29 @@ server:
   port: 8084
 
 spring:
+  config:
+    # Secrets come from environment variables. For local development they are read from a
+    # gitignored .env file (repo root; "../" covers running from a module directory).
+    import:
+      - "optional:file:.env[.properties]"
+      - "optional:file:../.env[.properties]"
   application:
     name: catalog-service
+  datasource:
+    url: jdbc:postgresql://localhost:5432/saschoolsport?currentSchema=catalog
+    username: catalog_svc
+    password: ${CATALOG_DB_PASSWORD}
+    driver-class-name: org.postgresql.Driver
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: false
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+    baseline-version: "1"
+    schemas: [catalog]
+    default-schema: catalog
 
 eureka:
   instance:
